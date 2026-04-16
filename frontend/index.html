@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetPulse | Unified Network Control</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Socket.io -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --slate-50: #f8fafc;
+            --slate-200: #e2e8f0;
+            --slate-800: #1e293b;
+            --slate-950: #020617;
+            --emerald-500: #10b981;
+            --emerald-600: #059669;
+            --amber-500: #f59e0b;
+            --rose-500: #f43f5e;
+            --card-bg: #ffffff;
+            --shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
+
+        body { 
+            background-color: var(--slate-50); 
+            color: var(--slate-800); 
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Nav */
+        nav {
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(8px);
+            padding: 1rem 3rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--slate-200);
+            position: sticky;
+            top: 0; z-index: 1000;
+        }
+
+        .logo {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--emerald-600);
+            display: flex;
+            align-items: center; gap: 0.5rem;
+        }
+
+        .btn-test {
+            background: var(--slate-950);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 99px;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex; align-items: center; gap: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .btn-test:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+
+        /* Dashboard Grid */
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 2rem auto;
+            padding: 0 3rem;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 2rem;
+        }
+
+        .main-column { display: flex; flex-direction: column; gap: 2rem; }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.02);
+            position: relative;
+        }
+
+        .card-title { font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+        .card-value { font-size: 2.5rem; font-weight: 800; font-family: 'Space Grotesk', sans-serif; }
+
+        .excellent { color: var(--emerald-500); }
+        .fair { color: var(--amber-500); }
+        .poor { color: var(--rose-500); }
+
+        /* Chart */
+        .chart-box { height: 350px; margin-top: 1rem; }
+
+        /* Topology Map (Integrated) */
+        .map-card { 
+            grid-row: span 2; 
+            display: flex; 
+            flex-direction: column;
+            gap: 2rem;
+            background: var(--slate-950);
+            color: white;
+            padding: 2.5rem 1.5rem;
+        }
+
+        .topology {
+            position: relative;
+            flex-grow: 1;
+            display: flex; flex-direction: column; gap: 3rem;
+            padding-left: 20px;
+        }
+
+        .topology::after {
+            content: '';
+            position: absolute; left: 35px; top: 20px; bottom: 20px;
+            width: 2px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .node {
+            display: flex; align-items: center; gap: 1.5rem;
+            position: relative; z-index: 2;
+        }
+
+        .node-dot {
+            width: 12px; height: 12px;
+            background: #334155;
+            border-radius: 50%;
+            outline: 4px solid var(--slate-950);
+        }
+
+        .node.active .node-dot { background: var(--emerald-500); box-shadow: 0 0 15px var(--emerald-500); }
+        .node.dead-zone .node-dot { background: var(--rose-500); box-shadow: 0 0 15px var(--rose-500); }
+
+        .node-label { font-size: 0.9rem; font-weight: 600; }
+        .node-meta { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+
+        /* Speed Overlay */
+        #speed-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(2, 6, 23, 0.95);
+            z-index: 2000;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .gauge-container { width: 300px; height: 300px; position: relative; }
+        
+        .gauge-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+        .gauge-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 12; }
+        .gauge-fill { 
+            fill: none; stroke: var(--emerald-500); stroke-width: 12; 
+            stroke-dasharray: 628; stroke-dashoffset: 628;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.5s ease-out;
+        }
+
+        .gauge-text {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .speed-number { font-size: 4rem; font-weight: 800; font-family: 'Space Grotesk', sans-serif; }
+        .speed-label { font-size: 1rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
+
+        .phase-indicator { margin-top: 3rem; font-size: 1.25rem; font-weight: 700; color: #94a3b8; display: flex; align-items: center; gap: 0.75rem; }
+        .phase-indicator.active { color: white; }
+
+        .speed-history {
+            display: flex; gap: 3rem; margin-top: 4rem;
+        }
+        .history-item { text-align: center; }
+        .hist-val { font-size: 2rem; font-weight: 800; font-family: 'Space Grotesk', sans-serif; }
+
+        /* Discovery Button & Animation */
+        .btn-discovery {
+            width: 100%;
+            padding: 2rem;
+            background: transparent;
+            border: 2px dashed rgba(255,255,255,0.1);
+            border-radius: 1.5rem;
+            color: #94a3b8;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex; align-items: center; justify-content: center; gap: 1rem;
+            grid-column: span 2;
+        }
+        .btn-discovery:hover {
+            border-color: var(--emerald-500);
+            color: white;
+            background: rgba(16, 185, 129, 0.05);
+            transform: translateY(-5px);
+        }
+        .btn-discovery.hidden {
+            opacity: 0; transform: scale(0.8) translateY(50px); pointer-events: none;
+        }
+
+        #local-devices-container {
+            transform: scale(0.9) translateY(20px);
+            opacity: 0;
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: none;
+        }
+        #local-devices-container.visible {
+            display: block;
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+
+        @keyframes scan-pulse {
+            0% { opacity: 0.1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 0.1; }
+        }
+        .scanning-text {
+            animation: scan-pulse 1.5s infinite;
+            font-weight: 800;
+            letter-spacing: 0.2em;
+            color: var(--emerald-500);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo"><i data-lucide="shield"></i> NETPULSE</div>
+        <button id="run-test" class="btn-test"><i data-lucide="zap"></i> Run System Test</button>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="main-column">
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-title"><i data-lucide="activity"></i> Overall Quality</div>
+                    <div id="quality-val" class="card-value excellent">Excellent</div>
+                </div>
+                <div class="card">
+                    <div class="card-title"><i data-lucide="clock"></i> Real Latency</div>
+                    <div class="card-value"><span id="latency-val">24</span> <small style="font-size: 1rem; color: #94a3b8">ms</small></div>
+                </div>
+                <div class="card">
+                    <div class="card-title"><i data-lucide="cloud"></i> Weather Impact</div>
+                    <div id="weather-type" style="font-weight: 800; font-size: 1.25rem;">Sunny</div>
+                    <div id="weather-impact" style="font-size: 0.8rem; color: #94a3b8;">x1.0 Multiplier</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Real-Time Performance Tracking</div>
+                <div class="chart-box">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Last Speed Results -->
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-title"><i data-lucide="download"></i> Download</div>
+                    <div class="card-value"><span id="last-down">--</span> <small style="font-size: 1rem; color: #94a3b8">Mbps</small></div>
+                </div>
+                <div class="card">
+                    <div class="card-title"><i data-lucide="upload"></i> Upload</div>
+                    <div class="card-value"><span id="last-up">--</span> <small style="font-size: 1rem; color: #94a3b8">Mbps</small></div>
+                </div>
+                <div class="card" style="background: var(--slate-800); color: white;">
+                    <div class="card-title" style="color: #64748b;">System Insights</div>
+                    <p style="font-size: 0.85rem; font-weight: 500; line-height: 1.5;" id="insight-text">
+                        System operational. Global server sync active.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Infrastructure Topology (Integrated) -->
+        <div class="card map-card">
+            <div class="card-title" style="color: #475569;">NETWORK TOPOLOGY (LIVE)</div>
+            <div id="topology-map" class="topology">
+                <!-- Nodes injected here -->
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 1rem; font-size: 0.75rem; color: #94a3b8;">
+                <i data-lucide="info" style="width: 14px; height: 14px; display: inline; vertical-align: middle;"></i>
+                Red highlights indicate "Dead Zones" where routing congestion causes potential packet loss.
+            </div>
+        </div>
+
+        <!-- NEW: INTERACTIVE ARP SCANNER -->
+        <button id="start-discovery" class="btn-discovery">
+            <i data-lucide="search"></i> Discover Local Infrastructure
+        </button>
+
+        <div id="local-devices-container" class="card" style="grid-column: span 2; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); color: white;">
+            <div class="card-title" style="color: #64748b;">
+                <i data-lucide="monitor"></i> OTHER DEVICES ON LOCAL NETWORK (LAN DISCOVERY)
+                <span id="scan-status" class="scanning-text" style="margin-left: auto; font-size: 0.7rem; display: none;">SCANNING...</span>
+            </div>
+            <div id="device-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                <div style="grid-column: 1/-1; padding: 2rem; text-align: center; color: #475569;">
+                    Initializing core scanner... One moment.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Speed Test Overlay -->
+    <div id="speed-overlay">
+        <h2 style="font-size: 2rem; font-weight: 800; margin-bottom: 3rem;">GLOBAL PERFORMANCE TEST</h2>
+        
+        <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 220 220">
+                <circle class="gauge-bg" cx="110" cy="110" r="100"></circle>
+                <circle id="gauge-fill" class="gauge-fill" cx="110" cy="110" r="100"></circle>
+            </svg>
+            <div class="gauge-text">
+                <div id="speed-num" class="speed-number">0</div>
+                <div class="speed-label">Mbps</div>
+            </div>
+        </div>
+
+        <div class="phase-indicator" id="test-phase">
+            <i data-lucide="loader-2" class="spin"></i> Initializing...
+        </div>
+
+        <div class="speed-history">
+            <div class="history-item">
+                <div class="speed-label">Download</div>
+                <div class="hist-val" id="hist-down">0.00</div>
+            </div>
+            <div class="history-item" style="opacity: 0.3;">
+                <div class="speed-label">Upload</div>
+                <div class="hist-val" id="hist-up">0.00</div>
+            </div>
+        </div>
+
+        <button id="close-test" class="btn-test" style="margin-top: 4rem; display: none;">Return To Dashboard</button>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        // Chart Setup
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Latency (ms)',
+                    data: [],
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+                    fill: true, tension: 0.4, borderWidth: 3, pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } },
+                    y: { grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8' } }
+                }
+            }
+        });
+
+        // Socket logic
+        const socket = io('http://localhost:5000');
+
+        socket.on('networkUpdate', (data) => {
+            document.getElementById('latency-val').innerText = data.latency;
+            document.getElementById('quality-val').innerText = data.quality;
+            document.getElementById('quality-val').className = 'card-value ' + data.quality.toLowerCase();
+            document.getElementById('weather-type').innerText = data.weather.type;
+            document.getElementById('weather-impact').innerText = `x${data.weather.impact} Multiplier`;
+            document.getElementById('insight-text').innerText = data.weather.description;
+
+            renderTopology(data.topology);
+            checkPerformanceAlert(data);
+
+            const time = new Date().toLocaleTimeString([], { hour12: false, minute:'2-digit', second:'2-digit' });
+            if (chart.data.labels.length > 30) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+            chart.data.labels.push(time);
+            chart.data.datasets[0].data.push(data.latency);
+            chart.update('none');
+        });
+
+        // Request Notification Permission
+        if ("Notification" in window) {
+            Notification.requestPermission();
+        }
+
+        let lastAlertTime = 0;
+        function checkPerformanceAlert(data) {
+            const now = Date.now();
+            if (data.latency > 150 && (now - lastAlertTime > 60000)) { // Alert once per minute
+                lastAlertTime = now;
+                if (Notification.permission === "granted") {
+                    new Notification("NetPulse Network Alert", {
+                        body: `High Latency Detected: ${data.latency}ms. Connection quality is ${data.quality}.`,
+                        icon: "https://cdn-icons-png.flaticon.com/512/564/564619.png"
+                    });
+                }
+            }
+        }
+
+        // Interactive Discovery Logic
+        const btnDiscovery = document.getElementById('start-discovery');
+        const discoveryContainer = document.getElementById('local-devices-container');
+        const scanStatus = document.getElementById('scan-status');
+
+        btnDiscovery.addEventListener('click', () => {
+            btnDiscovery.classList.add('hidden');
+            setTimeout(() => {
+                btnDiscovery.style.display = 'none';
+                discoveryContainer.style.display = 'block';
+                setTimeout(() => {
+                    discoveryContainer.classList.add('visible');
+                    scanStatus.style.display = 'inline';
+                }, 50);
+            }, 400);
+        });
+
+        socket.on('localNetworkUpdate', (data) => {
+            if (!discoveryContainer.classList.contains('visible')) return;
+            
+            const list = document.getElementById('device-list');
+            scanStatus.style.display = 'none'; // Done scanning
+            list.innerHTML = '';
+            
+            if (data.devices.length === 0) {
+                list.innerHTML = '<div style="grid-column: 1/-1; padding: 2rem; text-align: center; color: #475569;">No other devices detected on this segment.</div>';
+                return;
+            }
+
+            data.devices.forEach(device => {
+                const div = document.createElement('div');
+                div.style.background = 'rgba(255,255,255,0.03)';
+                div.style.padding = '1rem';
+                div.style.borderRadius = '1rem';
+                div.style.border = '1px solid rgba(255,255,255,0.05)';
+                div.style.animation = 'fadeIn 0.5s ease-out forwards';
+                div.innerHTML = `
+                    <div style="font-size: 0.7rem; color: #475569; margin-bottom: 0.5rem; text-transform: uppercase; font-weight: 800;">${device.type}</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: white;">${device.ip}</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8; font-family: monospace; margin: 0.5rem 0;">${device.mac}</div>
+                    <div style="font-size: 0.75rem; color: #10b981; font-weight: 600;">${device.name}</div>
+                `;
+                list.appendChild(div);
+            });
+            lucide.createIcons();
+        });
+
+        function renderTopology(nodes) {
+            const container = document.getElementById('topology-map');
+            container.innerHTML = '';
+            nodes.forEach(node => {
+                const nodeDiv = document.createElement('div');
+                nodeDiv.className = `node ${node.status === 'Healthy' ? 'active' : 'dead-zone'}`;
+                nodeDiv.innerHTML = `
+                    <div class="node-dot"></div>
+                    <div>
+                        <div class="node-label">${node.name}</div>
+                        <div class="node-meta">${node.type} • ${node.lat}ms • ${node.status}</div>
+                    </div>
+                `;
+                container.appendChild(nodeDiv);
+            });
+        }
+
+        // Speed Test Logic
+        const btnTest = document.getElementById('run-test');
+        const overlay = document.getElementById('speed-overlay');
+        const gauge = document.getElementById('gauge-fill');
+        const speedNum = document.getElementById('speed-num');
+        const phaseInfo = document.getElementById('test-phase');
+
+        btnTest.addEventListener('click', () => {
+            overlay.style.display = 'flex';
+            socket.emit('requestSpeedTest');
+        });
+
+        socket.on('speedTestPhase', (data) => {
+            phaseInfo.classList.add('active');
+            phaseInfo.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Phase: ${data.phase}...`;
+            if (data.status === 'Active') {
+                // Animate gauge randomly while testing
+                startGaugeSimulation();
+            } else if (data.status === 'Completed') {
+                stopGaugeSimulation();
+                updateGauge(data.result);
+                if (data.phase === 'Download') {
+                    document.getElementById('hist-down').innerText = data.result;
+                    document.getElementById('hist-up').parentElement.style.opacity = '1';
+                } else {
+                    document.getElementById('hist-up').innerText = data.result;
+                }
+            }
+            lucide.createIcons();
+        });
+
+        socket.on('speedTestResult', (data) => {
+            phaseInfo.innerHTML = `<i data-lucide="check-circle" style="color: #10b981"></i> Test Complete!`;
+            document.getElementById('last-down').innerText = data.download;
+            document.getElementById('last-up').innerText = data.upload;
+            document.getElementById('close-test').style.display = 'flex';
+            lucide.createIcons();
+        });
+
+        document.getElementById('close-test').addEventListener('click', () => {
+            overlay.style.display = 'none';
+            document.getElementById('close-test').style.display = 'none';
+        });
+
+        let gaugeInterval;
+        function startGaugeSimulation() {
+            gaugeInterval = setInterval(() => {
+                updateGauge(Math.random() * 200 + 100);
+            }, 300);
+        }
+        function stopGaugeSimulation() { clearInterval(gaugeInterval); }
+
+        function updateGauge(val) {
+            speedNum.innerText = Math.round(val);
+            const max = 1000;
+            const percentage = Math.min(val / max, 1);
+            const offset = 628 - (628 * percentage); // SVG circumf
+            gauge.style.strokeDashoffset = offset;
+        }
+    </script>
+</body>
+</html>
